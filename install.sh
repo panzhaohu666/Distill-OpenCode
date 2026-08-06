@@ -3,10 +3,17 @@
 #  Distill OpenCode — 一键安装脚本
 #  蒸馏 Sisyphus 同款 OpenCode 配置：模型、插件、技能、规则
 #
-#  用法:
-#    curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/install.sh | bash
+#  用法 (推荐 — 带 Key 一键完成):
+#    curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/install.sh | bash -s -- YOUR_DEEPSEEK_API_KEY
 #
-#  或者:
+#  用法 (交互式 — 会询问 Key):
+#    bash install.sh
+#
+#  用法 (环境变量):
+#    export DEEPSEEK_API_KEY="sk-xxx"
+#    curl -fsSL ... | bash
+#
+#  用法 (git clone):
 #    git clone https://github.com/panzhaohu666/Distill-OpenCode.git
 #    bash Distill-OpenCode/install.sh
 # ================================================================
@@ -21,6 +28,14 @@ REPO="panzhaohu666/Distill-OpenCode"
 CONFIG_DIR="${HOME}/.config/opencode"
 TEMP_DIR=""
 HAS_ERROR=0
+
+# ── API Key 收集 (优先级: 命令行参数 > 环境变量 > 交互输入) ──
+DEEPSEEK_KEY=""
+if [ $# -ge 1 ] && [ -n "${1:-}" ]; then
+  DEEPSEEK_KEY="$1"
+elif [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  DEEPSEEK_KEY="$DEEPSEEK_API_KEY"
+fi
 
 # ── 工具函数 ──────────────────────────────────────────
 cleanup() {
@@ -42,15 +57,15 @@ panic() {
   exit 1
 }
 
-# ── 检测是否为 curl 管道调用 ──────────────────────────
+# ── 检测是否需要从 GitHub Release 下载 ─────────────────
 if [ -t 0 ]; then
-  # 交互式终端：脚本在本地，从同目录找 archive
   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
   ARCHIVE_SOURCE="${SCRIPT_DIR}/opencode-skills.tar.gz"
+  INTERACTIVE=true
 else
-  # curl 管道调用：需要从 GitHub Release 下载
   SCRIPT_DIR=""
   ARCHIVE_SOURCE=""
+  INTERACTIVE=false
 fi
 
 # ════════════════════════════════════════════════════════
@@ -61,7 +76,7 @@ echo ""
 echo -e "  ${BOLD}${BLUE}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "  ${BOLD}${BLUE}║${NC}                                                  ${BOLD}${BLUE}║${NC}"
 echo -e "  ${BOLD}${BLUE}║${NC}   ${BOLD}Distill OpenCode — 一键安装 Sisyphus 同款配置${BOLD}${BLUE}║${NC}"
-echo -e "  ${BOLD}${BLUE}║${NC}   蒸馏 · 即用 · 无痛迁移                           ${BOLD}${BLUE}║${NC}"
+echo -e "  ${BOLD}${BLUE}║${NC}   蒸馏 · 即用 · 无痛迁移 · 一条命令到位           ${BOLD}${BLUE}║${NC}"
 echo -e "  ${BOLD}${BLUE}║${NC}                                                  ${BOLD}${BLUE}║${NC}"
 echo -e "  ${BOLD}${BLUE}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -69,33 +84,63 @@ echo -e "  仓库: ${CYAN}github.com/${REPO}${NC}"
 echo ""
 
 # ════════════════════════════════════════════════════════
+# Step 0 — 收集 API Key (如未提供)
+# ════════════════════════════════════════════════════════
+if [ -z "$DEEPSEEK_KEY" ]; then
+  if [ "$INTERACTIVE" = true ]; then
+    section "API Key 配置"
+    echo ""
+    echo -e "  ${BOLD}所有模型统一使用 DeepSeek，只需一个 API Key。${NC}"
+    echo -e "  DeepSeek API Key 获取: ${CYAN}https://platform.deepseek.com/api_keys${NC}"
+    echo ""
+    echo -e "  ${BOLD}请输入你的 DeepSeek API Key (sk-...):${NC}"
+    echo -n "  > "
+    read -r DEEPSEEK_KEY
+  fi
+  
+  if [ -z "$DEEPSEEK_KEY" ]; then
+    warn "未提供 API Key，将写入占位符。之后手动编辑: vim ~/.config/opencode/opencode.jsonc"
+    DEEPSEEK_KEY="YOUR_DEEPSEEK_API_KEY_HERE"
+  fi
+fi
+
+# 简单校验格式
+if [ "$DEEPSEEK_KEY" != "YOUR_DEEPSEEK_API_KEY_HERE" ]; then
+  if [[ "$DEEPSEEK_KEY" =~ ^sk- ]]; then
+    log "API Key 格式校验通过"
+    KEY_CONFIGURED=true
+  else
+    warn "API Key 格式不标准 (通常以 sk- 开头)，已写入但可能无效"
+    KEY_CONFIGURED=true
+  fi
+else
+  KEY_CONFIGURED=false
+fi
+
+# ════════════════════════════════════════════════════════
 # Step 1 — 环境检测
 # ════════════════════════════════════════════════════════
 section "Step 1/7 · 环境检测"
 
-# 操作系统
 OS="$(uname -s)"
 case "$OS" in
   Linux)   log "操作系统: Linux" ;;
   Darwin)  log "操作系统: macOS" ;;
-  *)       warn "操作系统: $OS — 未经充分测试，可能存在问题" ;;
+  *)       warn "操作系统: $OS — 未经充分测试" ;;
 esac
 
-# 架构
 ARCH="$(uname -m)"
 log "架构: ${ARCH}"
 
-# 磁盘空间
 if command -v df &>/dev/null; then
   AVAIL=$(df -k "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
   if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 500000 ]; then
-    warn "磁盘空间不足 500MB (可用: $((AVAIL/1024))MB)，安装可能失败"
+    warn "磁盘空间不足 500MB (可用: $((AVAIL/1024))MB)"
   else
     log "磁盘空间充足"
   fi
 fi
 
-# ── 检测/安装基本依赖 ─────────────────────────────────
 install_pkg() {
   local name="$1"
   for cmd in "$@"; do
@@ -129,27 +174,22 @@ install_pkg "curl" curl
 install_pkg "tar" tar
 install_pkg "git" git
 
-# ── 检测/安装 Node.js & npm ────────────────────────────
 if command -v node &>/dev/null; then
-  NODE_VER=$(node -v)
-  log "Node.js 已安装: ${NODE_VER}"
+  log "Node.js 已安装: $(node -v)"
 else
   warn "Node.js 未安装"
-  info "正在通过 nvm 安装 Node.js LTS..."
+  info "通过 nvm 安装 Node.js LTS..."
   export NVM_DIR="${HOME}/.nvm"
   if [ -s "$NVM_DIR/nvm.sh" ]; then
     source "$NVM_DIR/nvm.sh"
-    nvm install --lts
-    nvm use --lts
-    log "Node.js LTS 安装完成: $(node -v)"
+    nvm install --lts && nvm use --lts
   else
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
     export NVM_DIR="${HOME}/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-    nvm install --lts
-    nvm use --lts
-    log "Node.js LTS 安装完成: $(node -v)"
+    nvm install --lts && nvm use --lts
   fi
+  log "Node.js LTS: $(node -v)"
 fi
 
 # ════════════════════════════════════════════════════════
@@ -158,16 +198,12 @@ fi
 section "Step 2/7 · 安装 OpenCode CLI"
 
 if command -v opencode &>/dev/null; then
-  OC_VER=$(opencode --version 2>/dev/null || echo "unknown")
-  log "OpenCode CLI 已安装: ${OC_VER}"
+  log "OpenCode CLI 已安装: $(opencode --version 2>/dev/null || echo 'ok')"
 else
-  info "通过 npm 全局安装 opencode..."
+  info "npm install -g opencode@latest ..."
   npm install -g opencode@latest 2>&1 | tail -1
-  if command -v opencode &>/dev/null; then
-    log "OpenCode CLI 安装完成: $(opencode --version 2>/dev/null || echo 'ok')"
-  else
-    panic "OpenCode CLI 安装失败，请检查 npm 配置"
-  fi
+  command -v opencode &>/dev/null || panic "OpenCode CLI 安装失败"
+  log "OpenCode CLI 安装完成"
 fi
 
 # ════════════════════════════════════════════════════════
@@ -175,9 +211,9 @@ fi
 # ════════════════════════════════════════════════════════
 section "Step 3/7 · 创建配置目录"
 
-if [ -d "$CONFIG_DIR" ]; then
-  if [ -d "${CONFIG_DIR}/skills" ] || [ -d "${CONFIG_DIR}/skill-libraries" ]; then
-    warn "检测到已有 OpenCode 配置"
+if [ -d "$CONFIG_DIR" ] && { [ -d "${CONFIG_DIR}/skills" ] || [ -d "${CONFIG_DIR}/skill-libraries" ]; }; then
+  warn "检测到已有 OpenCode 配置"
+  if [ "$INTERACTIVE" = true ]; then
     echo ""
     echo -e "  ${YELLOW}是否覆盖已有配置？(y/N)${NC}"
     read -r OVERWRITE
@@ -188,21 +224,25 @@ if [ -d "$CONFIG_DIR" ]; then
       info "将覆盖现有配置..."
       SKIP_SKILLS=false
     fi
+  else
+    info "非交互模式，保留现有配置。如需覆盖请使用交互模式。"
+    SKIP_SKILLS=true
   fi
 fi
+SKIP_SKILLS="${SKIP_SKILLS:-false}"
 
 mkdir -p "$CONFIG_DIR"
 log "配置目录: ${CONFIG_DIR}"
 
 # ════════════════════════════════════════════════════════
-# Step 4 — 写入配置文件
+# Step 4 — 写入配置文件 (API Key 已注入)
 # ════════════════════════════════════════════════════════
 section "Step 4/7 · 写入配置文件"
 
-# ── opencode.jsonc ─────────────────────────────────────
-cat > "${CONFIG_DIR}/opencode.jsonc" << 'EOF'
+# ── opencode.jsonc (仅 DeepSeek，Key 已注入) ──────────
+cat > "${CONFIG_DIR}/opencode.jsonc" << EOF
 {
-  "$schema": "https://opencode.ai/config.json",
+  "\$schema": "https://opencode.ai/config.json",
   "plugin": [
     "oh-my-openagent@latest",
     "opencode-skill-creator"
@@ -212,20 +252,20 @@ cat > "${CONFIG_DIR}/opencode.jsonc" << 'EOF'
   "provider": {
     "deepseek": {
       "options": {
-        "apiKey": "YOUR_DEEPSEEK_API_KEY_HERE",
+        "apiKey": "${DEEPSEEK_KEY}",
         "timeout": 600000,
         "chunkTimeout": 60000
-      }
-    },
-    "google": {
-      "options": {
-        "apiKey": "YOUR_GOOGLE_API_KEY_HERE"
       }
     }
   }
 }
 EOF
-log "opencode.jsonc     — 模型配置 (需填入 API Key)"
+
+if [ "$KEY_CONFIGURED" = true ]; then
+  log "opencode.jsonc     — DeepSeek Key 已自动填入 ✓"
+else
+  warn "opencode.jsonc     — 占位符，请手动编辑填入 Key"
+fi
 
 # ── oh-my-openagent.jsonc ──────────────────────────────
 cat > "${CONFIG_DIR}/oh-my-openagent.jsonc" << 'EOF'
@@ -238,7 +278,7 @@ cat > "${CONFIG_DIR}/oh-my-openagent.jsonc" << 'EOF'
     "librarian":        { "model": "deepseek/deepseek-v4-flash" },
     "metis":            { "model": "deepseek/deepseek-v4-pro" },
     "momus":            { "model": "deepseek/deepseek-v4-pro" },
-    "multimodal-looker": { "model": "google/gemini-3.5-flash-lite" },
+    "multimodal-looker": { "model": "deepseek/deepseek-v4-flash" },
     "oracle":           { "model": "deepseek/deepseek-v4-pro" },
     "prometheus":       { "model": "deepseek/deepseek-v4-pro" },
     "sisyphus-junior":  { "model": "deepseek/deepseek-v4-flash" }
@@ -255,7 +295,7 @@ cat > "${CONFIG_DIR}/oh-my-openagent.jsonc" << 'EOF'
   }
 }
 EOF
-log "oh-my-openagent.jsonc — Agent/Category 模型分配"
+log "oh-my-openagent.jsonc — 全部 Agent 统一 DeepSeek"
 
 # ── tui.json ───────────────────────────────────────────
 cat > "${CONFIG_DIR}/tui.json" << 'EOF'
@@ -265,48 +305,40 @@ cat > "${CONFIG_DIR}/tui.json" << 'EOF'
   "theme": "tokyonight"
 }
 EOF
-log "tui.json           — 终端主题 tokyonight"
+log "tui.json           — 主题 tokyonight"
 
 # ════════════════════════════════════════════════════════
 # Step 5 — 下载并解压技能库
 # ════════════════════════════════════════════════════════
 section "Step 5/7 · 安装技能库 (1913 技能 + 99 入口 + 3 规则)"
 
-SKIP_SKILLS="${SKIP_SKILLS:-false}"
-
 if [ "$SKIP_SKILLS" = true ]; then
-  log "跳过技能库安装 (用户选择保留现有配置)"
+  log "跳过技能库安装 (保留现有)"
 else
-  # 确定 archive 来源
   if [ -n "$ARCHIVE_SOURCE" ] && [ -f "$ARCHIVE_SOURCE" ]; then
     info "使用本地技能包: ${ARCHIVE_SOURCE}"
     ARCHIVE_PATH="$ARCHIVE_SOURCE"
   else
-    # 从 GitHub Release 下载
     TEMP_DIR=$(mktemp -d)
     ARCHIVE_PATH="${TEMP_DIR}/opencode-skills.tar.gz"
     RELEASE_URL="https://github.com/${REPO}/releases/latest/download/opencode-skills.tar.gz"
     
-    info "从 GitHub Release 下载技能包..."
-    info "URL: ${RELEASE_URL}"
+    info "从 GitHub Release 下载技能包 (33MB)..."
     
     if curl -fSL --progress-bar -o "$ARCHIVE_PATH" "$RELEASE_URL"; then
       log "下载完成 ($(du -h "$ARCHIVE_PATH" | cut -f1))"
     else
-      # 尝试不跟随重定向
-      DL_URL=$(curl -sI "$RELEASE_URL" | grep -i location | awk '{print $2}' | tr -d '\r')
+      DL_URL=$(curl -sI "$RELEASE_URL" | grep -i '^location:' | awk '{print $2}' | tr -d '\r')
       if [ -n "$DL_URL" ]; then
-        info "跟随重定向下载..."
-        curl -fSL --progress-bar -o "$ARCHIVE_PATH" "$DL_URL" || panic "下载技能包失败，请检查网络连接"
+        curl -fSL --progress-bar -o "$ARCHIVE_PATH" "$DL_URL" || panic "下载失败，请检查网络"
         log "下载完成 ($(du -h "$ARCHIVE_PATH" | cut -f1))"
       else
-        panic "无法从 GitHub Release 下载技能包。请确认网络连接或手动下载。"
+        panic "无法下载技能包。请检查网络或手动下载。"
       fi
     fi
   fi
   
-  # 解压
-  info "解压技能包到 ${CONFIG_DIR}..."
+  info "解压到 ${CONFIG_DIR}..."
   tar xzf "$ARCHIVE_PATH" -C "$CONFIG_DIR/" 2>/dev/null
   log "技能包解压完成"
 fi
@@ -319,12 +351,12 @@ section "Step 6/7 · 安装插件"
 info "安装 oh-my-openagent..."
 opencode plugin install oh-my-openagent@latest 2>/dev/null && \
   log "oh-my-openagent ✓" || \
-  warn "oh-my-openagent 可稍后手动安装: opencode plugin install oh-my-openagent@latest"
+  warn "可稍后手动安装: opencode plugin install oh-my-openagent@latest"
 
 info "安装 opencode-skill-creator..."
 opencode plugin install opencode-skill-creator 2>/dev/null && \
   log "opencode-skill-creator ✓" || \
-  warn "opencode-skill-creator 可稍后手动安装: opencode plugin install opencode-skill-creator"
+  warn "可稍后手动安装: opencode plugin install opencode-skill-creator"
 
 # ════════════════════════════════════════════════════════
 # Step 7 — 验证
@@ -360,25 +392,27 @@ fi
 echo ""
 echo -e "  ${BOLD}${GREEN}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}   ${BOLD}安装完成！${NC}                                   ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}   ${BOLD}安装完成！一条命令，全部到位。${NC}                 ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
+
+if [ "$KEY_CONFIGURED" = true ]; then
+  echo -e "  ${BOLD}${GREEN}║${NC}   ${GREEN}✓ API Key 已配置，开箱即用。${NC}                    ${BOLD}${GREEN}║${NC}"
+else
+  echo -e "  ${BOLD}${GREEN}║${NC}   ${YELLOW}⚠ 请编辑 ~/.config/opencode/opencode.jsonc${NC}       ${BOLD}${GREEN}║${NC}"
+  echo -e "  ${BOLD}${GREEN}║${NC}   ${YELLOW}   替换 YOUR_DEEPSEEK_API_KEY_HERE${NC}              ${BOLD}${GREEN}║${NC}"
+fi
+
 echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
 echo -e "  ${BOLD}${GREEN}╠══════════════════════════════════════════════════╣${NC}"
 echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}  ${YELLOW}⚠ 完成最后一步 — 填入 API Key:${NC}                 ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}  ${CYAN}vim ~/.config/opencode/opencode.jsonc${NC}          ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}  替换:                                           ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}    YOUR_DEEPSEEK_API_KEY_HERE                   ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}    YOUR_GOOGLE_API_KEY_HERE                     ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}╠══════════════════════════════════════════════════╣${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}  快速验证:                                       ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}  验证:                                           ${BOLD}${GREEN}║${NC}"
 echo -e "  ${BOLD}${GREEN}║${NC}    ${CYAN}opencode \"hello world\"${NC}                      ${BOLD}${GREEN}║${NC}"
 echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}  一键安装命令 (新机器):                          ${BOLD}${GREEN}║${NC}"
-echo -e "  ${BOLD}${GREEN}║${NC}    ${CYAN}curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash${NC}${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}  后续如需加 Google/其他 provider:                ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}    ${CYAN}vim ~/.config/opencode/opencode.jsonc${NC}          ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}  新机器一键安装:                                 ${BOLD}${GREEN}║${NC}"
+echo -e "  ${BOLD}${GREEN}║${NC}    ${CYAN}curl -fsSL .../install.sh | bash -s -- sk-xxx${NC} ${BOLD}${GREEN}║${NC}"
 echo -e "  ${BOLD}${GREEN}║${NC}                                                  ${BOLD}${GREEN}║${NC}"
 echo -e "  ${BOLD}${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
