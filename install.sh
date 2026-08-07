@@ -245,7 +245,7 @@ cat > "${CONFIG_DIR}/opencode.jsonc" << EOF
   "\$schema": "https://opencode.ai/config.json",
   "plugin": [
     "oh-my-openagent@latest",
-    "opencode-skill-creator"
+    "opencode-skill-creator@latest"
   ],
   "model": "deepseek/deepseek-v4-pro",
   "small_model": "deepseek/deepseek-v4-flash",
@@ -354,9 +354,22 @@ opencode plugin install oh-my-openagent@latest 2>/dev/null && \
   warn "可稍后手动安装: opencode plugin install oh-my-openagent@latest"
 
 info "安装 opencode-skill-creator..."
-opencode plugin install opencode-skill-creator 2>/dev/null && \
+opencode plugin install opencode-skill-creator@latest 2>/dev/null && \
   log "opencode-skill-creator ✓" || \
-  warn "可稍后手动安装: opencode plugin install opencode-skill-creator"
+  warn "可稍后手动安装: opencode plugin install opencode-skill-creator@latest"
+
+# ════════════════════════════════════════════════════════
+# Step 6.5 — 修复 codegraph MCP
+# ════════════════════════════════════════════════════════
+section "Step 6.5/7 · 修复 codegraph MCP 捆绑 Node 缺失"
+
+if [ -f "${HOME}/.omo/codegraph/bin/codegraph" ] && [ ! -f "${HOME}/.omo/codegraph/lib/node" ]; then
+  info "检测到 codegraph 捆绑 Node 缺失，创建软链接..."
+  ln -sf "$(command -v node)" "${HOME}/.omo/codegraph/lib/node"
+  log "codegraph MCP: node 软链接已创建 ✓"
+else
+  log "codegraph MCP: 无需修复 ✓"
+fi
 
 # ════════════════════════════════════════════════════════
 # Step 7 — 验证
