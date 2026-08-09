@@ -48,7 +48,7 @@ bash install.sh
 
 ### 配置架构
 
-```
+```text
 推理层 (Pro)             执行层 (Flash)
 ──────────────────────   ──────────────────────
 oracle                   sisyphus-junior
@@ -136,7 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/
 
 安装后 `~/.config/opencode/`：
 
-```
+```text
 ~/.config/opencode/
 ├── opencode.jsonc              # 主配置（模型、provider、API Key）
 ├── oh-my-openagent.jsonc       # Agent/Category 模型分配（全 DeepSeek）
