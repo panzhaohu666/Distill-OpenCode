@@ -44,6 +44,7 @@ scan_dir() {
   local file rel fm name desc tags triggers loc
   while IFS= read -r file; do
     rel="${file#"$root"/}"
+    # shellcheck disable=SC2088  # ~ is literal here for display paths
     loc="~/${file#"$HOME"/}"
     fm="$(awk 'BEGIN{n=0} /^---[[:space:]]*$/{n++; next} n==1{print} n==2{exit}' "$file")"
     [ -n "$fm" ] || continue

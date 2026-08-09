@@ -11,12 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          severity: warning
-          scandir: '.'
-          format: tty
+        run: shellcheck -S warning install.sh tests/*.sh scripts/*.sh
 
   markdownlint:
     runs-on: ubuntu-latest

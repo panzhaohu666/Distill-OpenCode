@@ -25,8 +25,8 @@ cd Distill-OpenCode
 ```
 
 项目结构：
+```text
 
-```
 Distill-OpenCode/
 ├── install.sh                 # 一键安装脚本（bash）
 ├── README.md                  # 项目说明
