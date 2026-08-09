@@ -158,6 +158,8 @@ curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/
 
 添加新技能请参考 [SKILL_TEMPLATE.md](SKILL_TEMPLATE.md)。
 
+版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ---
 
 ## License
