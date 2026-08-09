@@ -85,6 +85,7 @@ if [ -z "$DEEPSEEK_KEY" ] && [ -n "${DEEPSEEK_API_KEY:-}" ]; then
 fi
 
 # ── 工具函数 ──────────────────────────────────────────
+# shellcheck disable=SC2329  # cleanup is invoked via trap
 cleanup() {
   if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
     rm -rf "$TEMP_DIR"
@@ -254,12 +255,14 @@ else
   warn "Node.js 未安装"
   info "通过 nvm 安装 Node.js LTS..."
   export NVM_DIR="${HOME}/.nvm"
+  # shellcheck source=/dev/null
   if [ -s "$NVM_DIR/nvm.sh" ]; then
     source "$NVM_DIR/nvm.sh"
     nvm install --lts && nvm use --lts
   else
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
     export NVM_DIR="${HOME}/.nvm"
+    # shellcheck source=/dev/null
     [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
     nvm install --lts && nvm use --lts
   fi
@@ -510,14 +513,18 @@ fi
 section "Step 6/7 · 安装插件"
 
 info "安装 oh-my-openagent..."
-opencode plugin install oh-my-openagent@latest 2>/dev/null && \
-  log "oh-my-openagent ✓" || \
+if opencode plugin install oh-my-openagent@latest 2>/dev/null; then
+  log "oh-my-openagent ✓"
+else
   warn "可稍后手动安装: opencode plugin install oh-my-openagent@latest"
+fi
 
 info "安装 opencode-skill-creator..."
-opencode plugin install opencode-skill-creator@latest 2>/dev/null && \
-  log "opencode-skill-creator ✓" || \
+if opencode plugin install opencode-skill-creator@latest 2>/dev/null; then
+  log "opencode-skill-creator ✓"
+else
   warn "可稍后手动安装: opencode plugin install opencode-skill-creator@latest"
+fi
 
 # ════════════════════════════════════════════════════════
 # Step 6.5 — 修复 codegraph MCP
