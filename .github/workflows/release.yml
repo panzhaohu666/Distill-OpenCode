@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Package skills
+        run: |
+          tar czf opencode-skills.tar.gz \
+            skills/ \
+            skill-libraries/ \
+            rules/
+
+      - name: Generate checksum
+        run: |
+          sha256sum opencode-skills.tar.gz > opencode-skills.tar.gz.sha256
+          cat opencode-skills.tar.gz.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## Distill OpenCode ${{ steps.version.outputs.VERSION }}
+
+            ### 安装方式
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/install.sh | bash -s -- sk-your-key
+            ```
+
+            或安装指定版本：
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/install.sh | bash -s -- sk-your-key --version ${{ steps.version.outputs.VERSION }}
+            ```
+
+            ### 文件校验
+            - `opencode-skills.tar.gz`: 技能包 (skills + skill-libraries + rules)
+            - `opencode-skills.tar.gz.sha256`: SHA256 校验和
+          files: |
+            opencode-skills.tar.gz
+            opencode-skills.tar.gz.sha256
+          generate_release_notes: true

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  test-interactive:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile
+    environment:
+      - DEEPSEEK_API_KEY=sk-test-key-for-integration-test
+    volumes:
+      - ../install.sh:/test/install.sh:ro
+      - ../tests/test-install.sh:/test/test-install.sh:ro
+
+  test-arg-mode:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile
+    environment: {}
+    volumes:
+      - ../install.sh:/test/install.sh:ro
+      - ../tests/test-install.sh:/test/test-install.sh:ro
+    command: >
+      bash -c "bash /test/install.sh sk-test-key-from-arg 2>&1 || true;
+               bash /test/test-install.sh"
+
+  test-env-mode:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile
+    environment:
+      - DEEPSEEK_API_KEY=sk-test-key-from-env
+    volumes:
+      - ../install.sh:/test/install.sh:ro
+      - ../tests/test-install.sh:/test/test-install.sh:ro
+    command: >
+      bash -c "bash /test/install.sh 2>&1 || true;
+               bash /test/test-install.sh"

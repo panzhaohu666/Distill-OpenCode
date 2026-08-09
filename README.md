@@ -94,6 +94,8 @@ artistry                 multimodal-looker
 opencode "hello world"
 ```
 
+> 查看 [快速体验指南](docs/QUICKSTART.md) 了解更多使用示例和常见问题解答。
+
 ---
 
 ## 后续加其他 Provider（可选）
@@ -147,6 +149,14 @@ curl -fsSL https://raw.githubusercontent.com/panzhaohu666/Distill-OpenCode/main/
 ├── skill-libraries/            # 技能库（1913 个完整 SKILL.md）
 └── opencode-skill-creator-update-check.json
 ```
+
+---
+
+## 参与贡献
+
+欢迎提交 Issue 和 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+添加新技能请参考 [SKILL_TEMPLATE.md](SKILL_TEMPLATE.md)。
 
 ---
 

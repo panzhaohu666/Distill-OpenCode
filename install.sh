@@ -13,9 +13,29 @@
 #    export DEEPSEEK_API_KEY="sk-xxx"
 #    curl -fsSL ... | bash
 #
+#  用法 (指定版本):
+#    bash install.sh sk-xxx --version v1.0.0
+#    bash install.sh --version v1.0.0 sk-xxx
+#    curl -fsSL ... | bash -s -- --version v1.0.0 sk-xxx
+#
+#  用法 (安静模式 — 只输出错误):
+#    bash install.sh -q sk-xxx
+#    bash install.sh --quiet --version v1.0.0
+#
 #  用法 (git clone):
 #    git clone https://github.com/panzhaohu666/Distill-OpenCode.git
 #    bash Distill-OpenCode/install.sh
+#
+#  本地自定义保护:
+#    如果 ~/.config/opencode/local/ 已存在文件, 安装过程不会覆盖它们。
+#    技能包解压时会自动保留 local/ 目录中的现有文件。
+#
+#  退出码:
+#    0 = 成功
+#    1 = 依赖检查失败
+#    2 = 下载失败
+#    3 = 配置文件写入失败
+#    4 = 技能包解压失败
 # ================================================================
 set -euo pipefail
 
@@ -28,12 +48,39 @@ REPO="panzhaohu666/Distill-OpenCode"
 CONFIG_DIR="${HOME}/.config/opencode"
 TEMP_DIR=""
 HAS_ERROR=0
-
-# ── API Key 收集 (优先级: 命令行参数 > 环境变量 > 交互输入) ──
+QUIET=false
+VERSION=""
 DEEPSEEK_KEY=""
-if [ $# -ge 1 ] && [ -n "${1:-}" ]; then
-  DEEPSEEK_KEY="$1"
-elif [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+
+# ── 参数解析 ──────────────────────────────────────────
+# 遍历所有命令行参数, 提取 API Key (sk-... 或非 flag 参数),
+# --version / -v, --quiet / -q
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --version|-v)
+      if [ $# -lt 2 ]; then
+        echo -e "${RED}错误: --version 需要参数, 例如 --version v1.0.0${NC}" >&2
+        exit 1
+      fi
+      VERSION="$2"
+      shift 2
+      ;;
+    --quiet|-q)
+      QUIET=true
+      shift
+      ;;
+    *)
+      # 第一个非 flag 参数作为 API Key
+      if [ -z "$DEEPSEEK_KEY" ] && [ -n "${1:-}" ]; then
+        DEEPSEEK_KEY="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+# 如果命令行未提供 Key, 尝试环境变量
+if [ -z "$DEEPSEEK_KEY" ] && [ -n "${DEEPSEEK_API_KEY:-}" ]; then
   DEEPSEEK_KEY="$DEEPSEEK_API_KEY"
 fi
 
@@ -44,20 +91,53 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+# 额外捕获常见信号, 确保 TEMP_DIR 被清理
+trap 'cleanup; exit 130' INT TERM
+trap 'cleanup' HUP
 
-log()     { echo -e "  ${GREEN}✓${NC} $*"; }
-warn()    { echo -e "  ${YELLOW}⚠${NC} $*"; }
+# 处理 SIGPIPE: 确保 TEMP_DIR 被清理后退出
+trap 'cleanup; exit 141' PIPE 2>/dev/null || true
+
+log()     { [ "$QUIET" = false ] && echo -e "  ${GREEN}✓${NC} $*"; }
+warn()    { [ "$QUIET" = false ] && echo -e "  ${YELLOW}⚠${NC} $*"; }
 err()     { echo -e "  ${RED}✗${NC} $*"; HAS_ERROR=1; }
-info()    { echo -e "  ${CYAN}→${NC} $*"; }
+info()    { [ "$QUIET" = false ] && echo -e "  ${CYAN}→${NC} $*"; }
 section() { echo -e "\n${BOLD}${BLUE}═══ $* ═══${NC}"; }
 
 panic() {
-  echo -e "\n${RED}${BOLD}致命错误:${NC} $*"
+  local msg="$1"
+  local code="${2:-1}"
+  echo -e "\n${RED}${BOLD}致命错误:${NC} $msg"
   echo "安装中断。请检查上述错误后重试。"
-  exit 1
+  exit "$code"
 }
 
-# ── 检测是否需要从 GitHub Release 下载 ─────────────────
+# ── 横幅 (安静模式下跳过) ─────────────────────────────
+show_banner() {
+  clear 2>/dev/null || true
+  echo ""
+  echo -e "  ${BOLD}${BLUE}╔══════════════════════════════════════════════════╗${NC}"
+  echo -e "  ${BOLD}${BLUE}║${NC}                                                  ${BOLD}${BLUE}║${NC}"
+  echo -e "  ${BOLD}${BLUE}║${NC}   ${BOLD}Distill OpenCode — 一键安装 Sisyphus 同款配置${BOLD}${BLUE}║${NC}"
+  echo -e "  ${BOLD}${BLUE}║${NC}   蒸馏 · 即用 · 无痛迁移 · 一条命令到位           ${BOLD}${BLUE}║${NC}"
+  echo -e "  ${BOLD}${BLUE}║${NC}                                                  ${BOLD}${BLUE}║${NC}"
+  echo -e "  ${BOLD}${BLUE}╚══════════════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "  仓库: ${CYAN}github.com/${REPO}${NC}"
+  if [ -n "$VERSION" ]; then
+    echo -e "  版本: ${CYAN}${VERSION}${NC}"
+  fi
+  echo ""
+}
+
+if [ "$QUIET" = false ]; then
+  show_banner
+fi
+
+# ════════════════════════════════════════════════════════
+# Step 0 — 收集 API Key (如未提供)
+# ════════════════════════════════════════════════════════
+# 检测运行模式: 从 tty 运行 (交互模式) vs 管道输入 (非交互)
 if [ -t 0 ]; then
   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
   ARCHIVE_SOURCE="${SCRIPT_DIR}/opencode-skills.tar.gz"
@@ -68,24 +148,6 @@ else
   INTERACTIVE=false
 fi
 
-# ════════════════════════════════════════════════════════
-# 横幅
-# ════════════════════════════════════════════════════════
-clear 2>/dev/null || true
-echo ""
-echo -e "  ${BOLD}${BLUE}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "  ${BOLD}${BLUE}║${NC}                                                  ${BOLD}${BLUE}║${NC}"
-echo -e "  ${BOLD}${BLUE}║${NC}   ${BOLD}Distill OpenCode — 一键安装 Sisyphus 同款配置${BOLD}${BLUE}║${NC}"
-echo -e "  ${BOLD}${BLUE}║${NC}   蒸馏 · 即用 · 无痛迁移 · 一条命令到位           ${BOLD}${BLUE}║${NC}"
-echo -e "  ${BOLD}${BLUE}║${NC}                                                  ${BOLD}${BLUE}║${NC}"
-echo -e "  ${BOLD}${BLUE}╚══════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "  仓库: ${CYAN}github.com/${REPO}${NC}"
-echo ""
-
-# ════════════════════════════════════════════════════════
-# Step 0 — 收集 API Key (如未提供)
-# ════════════════════════════════════════════════════════
 if [ -z "$DEEPSEEK_KEY" ]; then
   if [ "$INTERACTIVE" = true ]; then
     section "API Key 配置"
@@ -97,7 +159,7 @@ if [ -z "$DEEPSEEK_KEY" ]; then
     echo -n "  > "
     read -r DEEPSEEK_KEY
   fi
-  
+
   if [ -z "$DEEPSEEK_KEY" ]; then
     warn "未提供 API Key，将写入占位符。之后手动编辑: vim ~/.config/opencode/opencode.jsonc"
     DEEPSEEK_KEY="YOUR_DEEPSEEK_API_KEY_HERE"
@@ -115,6 +177,18 @@ if [ "$DEEPSEEK_KEY" != "YOUR_DEEPSEEK_API_KEY_HERE" ]; then
   fi
 else
   KEY_CONFIGURED=false
+fi
+
+# ════════════════════════════════════════════════════════
+# Step 0.5 — 预安装备份 (如有现有配置)
+# ════════════════════════════════════════════════════════
+if [ -d "$CONFIG_DIR" ] && [ "$(ls -A "$CONFIG_DIR" 2>/dev/null)" ]; then
+  BACKUP_DIR="${HOME}/.config/opencode.backup/$(date +%Y%m%d-%H%M%S)"
+  section "预安装备份"
+  mkdir -p "$(dirname "$BACKUP_DIR")"
+  info "检测到已有配置, 备份到: ${BACKUP_DIR}"
+  cp -r "$CONFIG_DIR" "$BACKUP_DIR"
+  log "备份完成: ${BACKUP_DIR}"
 fi
 
 # ════════════════════════════════════════════════════════
@@ -202,7 +276,7 @@ if command -v opencode &>/dev/null; then
 else
   info "npm install -g opencode@latest ..."
   npm install -g opencode@latest 2>&1 | tail -1
-  command -v opencode &>/dev/null || panic "OpenCode CLI 安装失败"
+  command -v opencode &>/dev/null || panic "OpenCode CLI 安装失败" 1
   log "OpenCode CLI 安装完成"
 fi
 
@@ -239,8 +313,25 @@ log "配置目录: ${CONFIG_DIR}"
 # ════════════════════════════════════════════════════════
 section "Step 4/7 · 写入配置文件"
 
-# ── opencode.jsonc (仅 DeepSeek，Key 已注入) ──────────
-cat > "${CONFIG_DIR}/opencode.jsonc" << EOF
+# 检测是否有本地 config-templates/ 目录 (git clone 安装模式)
+# 如果有模板文件则使用它们, 否则回退到内置 heredocs
+USE_TEMPLATES=false
+if [ -n "$SCRIPT_DIR" ] && [ -d "${SCRIPT_DIR}/config-templates" ]; then
+  if [ -f "${SCRIPT_DIR}/config-templates/opencode.jsonc" ]; then
+    USE_TEMPLATES=true
+  fi
+fi
+
+# ── opencode.jsonc (仅 DeepSeek, Key 已注入) ──────────
+if [ "$USE_TEMPLATES" = true ]; then
+  info "使用 config-templates/ 模板..."
+  # 转义 API Key 中的特殊字符, 防止 sed 替换异常
+  ESCAPED_KEY=$(printf '%s' "$DEEPSEEK_KEY" | sed 's/[&/\]/\\&/g')
+  sed "s|\${DEEPSEEK_KEY}|${ESCAPED_KEY}|g" \
+    "${SCRIPT_DIR}/config-templates/opencode.jsonc" \
+    > "${CONFIG_DIR}/opencode.jsonc" || panic "写入 opencode.jsonc 失败" 3
+else
+  cat > "${CONFIG_DIR}/opencode.jsonc" << EOF
 {
   "\$schema": "https://opencode.ai/config.json",
   "plugin": [
@@ -260,6 +351,7 @@ cat > "${CONFIG_DIR}/opencode.jsonc" << EOF
   }
 }
 EOF
+fi
 
 if [ "$KEY_CONFIGURED" = true ]; then
   log "opencode.jsonc     — DeepSeek Key 已自动填入 ✓"
@@ -268,7 +360,11 @@ else
 fi
 
 # ── oh-my-openagent.jsonc ──────────────────────────────
-cat > "${CONFIG_DIR}/oh-my-openagent.jsonc" << 'EOF'
+if [ "$USE_TEMPLATES" = true ] && [ -f "${SCRIPT_DIR}/config-templates/oh-my-openagent.jsonc" ]; then
+  cp "${SCRIPT_DIR}/config-templates/oh-my-openagent.jsonc" \
+    "${CONFIG_DIR}/oh-my-openagent.jsonc" || panic "写入 oh-my-openagent.jsonc 失败" 3
+else
+  cat > "${CONFIG_DIR}/oh-my-openagent.jsonc" << 'EOF'
 {
   "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-openagent.schema.json",
   "agents": {
@@ -295,16 +391,22 @@ cat > "${CONFIG_DIR}/oh-my-openagent.jsonc" << 'EOF'
   }
 }
 EOF
+fi
 log "oh-my-openagent.jsonc — 全部 Agent 统一 DeepSeek"
 
 # ── tui.json ───────────────────────────────────────────
-cat > "${CONFIG_DIR}/tui.json" << 'EOF'
+if [ "$USE_TEMPLATES" = true ] && [ -f "${SCRIPT_DIR}/config-templates/tui.json" ]; then
+  cp "${SCRIPT_DIR}/config-templates/tui.json" \
+    "${CONFIG_DIR}/tui.json" || panic "写入 tui.json 失败" 3
+else
+  cat > "${CONFIG_DIR}/tui.json" << 'EOF'
 {
   "$schema": "https://opencode.ai/tui.json",
   "plugin": ["oh-my-openagent@latest"],
   "theme": "tokyonight"
 }
 EOF
+fi
 log "tui.json           — 主题 tokyonight"
 
 # ════════════════════════════════════════════════════════
@@ -315,32 +417,91 @@ section "Step 5/7 · 安装技能库 (1913 技能 + 99 入口 + 3 规则)"
 if [ "$SKIP_SKILLS" = true ]; then
   log "跳过技能库安装 (保留现有)"
 else
+  # 保存 local/ 目录 (如存在并有内容), 解压后恢复, 防止覆盖用户自定义
+  LOCAL_BACKUP=""
+  if [ -d "${CONFIG_DIR}/local" ] && ls -A "${CONFIG_DIR}/local/" >/dev/null 2>&1; then
+    LOCAL_BACKUP="$(mktemp -d)"
+    cp -r "${CONFIG_DIR}/local" "$LOCAL_BACKUP/"
+    info "local/ 目录已保存, 解压后将恢复以保留自定义文件"
+  fi
+
   if [ -n "$ARCHIVE_SOURCE" ] && [ -f "$ARCHIVE_SOURCE" ]; then
     info "使用本地技能包: ${ARCHIVE_SOURCE}"
     ARCHIVE_PATH="$ARCHIVE_SOURCE"
   else
     TEMP_DIR=$(mktemp -d)
     ARCHIVE_PATH="${TEMP_DIR}/opencode-skills.tar.gz"
-    RELEASE_URL="https://github.com/${REPO}/releases/latest/download/opencode-skills.tar.gz"
-    
+
+    # 根据是否指定版本选择下载 URL
+    if [ -n "$VERSION" ]; then
+      RELEASE_URL="https://github.com/${REPO}/releases/download/${VERSION}/opencode-skills.tar.gz"
+    else
+      RELEASE_URL="https://github.com/${REPO}/releases/latest/download/opencode-skills.tar.gz"
+    fi
+
     info "从 GitHub Release 下载技能包 (33MB)..."
-    
-    if curl -fSL --progress-bar -o "$ARCHIVE_PATH" "$RELEASE_URL"; then
+    info "URL: ${RELEASE_URL}"
+
+    # 带重试的下载
+    if curl -fSL --progress-bar --retry 3 --retry-delay 5 --retry-max-time 120 \
+      -o "$ARCHIVE_PATH" "$RELEASE_URL"; then
       log "下载完成 ($(du -h "$ARCHIVE_PATH" | cut -f1))"
     else
+      # 尝试跟随重定向作为后备方案
       DL_URL=$(curl -sI "$RELEASE_URL" | grep -i '^location:' | awk '{print $2}' | tr -d '\r')
       if [ -n "$DL_URL" ]; then
-        curl -fSL --progress-bar -o "$ARCHIVE_PATH" "$DL_URL" || panic "下载失败，请检查网络"
+        curl -fSL --progress-bar --retry 3 --retry-delay 5 --retry-max-time 120 \
+          -o "$ARCHIVE_PATH" "$DL_URL" || panic "下载失败，请检查网络" 2
         log "下载完成 ($(du -h "$ARCHIVE_PATH" | cut -f1))"
       else
-        panic "无法下载技能包。请检查网络或手动下载。"
+        panic "无法下载技能包。请检查网络或手动下载。" 2
       fi
     fi
+
+    # ── SHA256 校验 ────────────────────────────────────
+    CHECKSUM_URL="${RELEASE_URL}.sha256"
+    CHECKSUM_PATH="${TEMP_DIR}/opencode-skills.tar.gz.sha256"
+    info "下载 SHA256 校验文件..."
+    if curl -fSL --retry 3 --retry-delay 5 --retry-max-time 60 \
+      -o "$CHECKSUM_PATH" "$CHECKSUM_URL" 2>/dev/null; then
+      info "校验文件下载成功, 正在验证..."
+      pushd "$TEMP_DIR" > /dev/null
+      if sha256sum -c "opencode-skills.tar.gz.sha256" 2>/dev/null; then
+        log "SHA256 校验通过 ✓"
+      else
+        EXPECTED=$(cat "$CHECKSUM_PATH" 2>/dev/null | awk '{print $1}')
+        ACTUAL=$(sha256sum "$ARCHIVE_PATH" 2>/dev/null | awk '{print $1}')
+        warn "SHA256 校验失败!"
+        warn "  期望: ${EXPECTED:-未知}"
+        warn "  实际: ${ACTUAL:-无法计算}"
+        warn "  将继续安装 (不推荐), 按 Ctrl+C 中止或等待继续..."
+        sleep 3
+      fi
+      popd > /dev/null
+    else
+      warn "无法下载 SHA256 校验文件, 跳过校验 (不推荐)"
+    fi
   fi
-  
+
   info "解压到 ${CONFIG_DIR}..."
-  tar xzf "$ARCHIVE_PATH" -C "$CONFIG_DIR/" 2>/dev/null
+  tar xzf "$ARCHIVE_PATH" -C "${CONFIG_DIR}/" 2>/dev/null \
+    || panic "技能包解压失败, 请检查磁盘空间或文件完整性" 4
   log "技能包解压完成"
+
+  # ── 恢复 local/ 目录 ─────────────────────────────────
+  if [ -n "$LOCAL_BACKUP" ] && [ -d "$LOCAL_BACKUP/local" ]; then
+    if [ -d "${CONFIG_DIR}/local" ]; then
+      rm -rf "${CONFIG_DIR}/local"
+    fi
+    cp -r "$LOCAL_BACKUP/local" "${CONFIG_DIR}/local"
+    rm -rf "$LOCAL_BACKUP"
+    log "local/ 自定义目录已恢复 ✓"
+  fi
+fi
+
+# ── local/ 目录检测提示 ──────────────────────────────
+if [ -d "${CONFIG_DIR}/local" ] && ls -A "${CONFIG_DIR}/local/" >/dev/null 2>&1; then
+  info "检测到 local/ 自定义目录, 其中的文件不会被后续安装覆盖"
 fi
 
 # ════════════════════════════════════════════════════════
