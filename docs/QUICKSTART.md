@@ -29,21 +29,25 @@ opencode "hello world"
 ## 第三步：试试这些例子
 
 ### 写代码
+
 ```bash
 opencode "用 Python 写一个快速排序算法，带详细的注释"
 ```
 
 ### 调试
+
 ```bash
 opencode "帮我分析这段代码为什么报 segmentation fault"
 ```
 
 ### 写测试
+
 ```bash
 opencode "为 src/utils/auth.ts 写单元测试"
 ```
 
 ### 代码审查
+
 ```bash
 opencode "review 当前仓库最近的 5 个 commit"
 ```
